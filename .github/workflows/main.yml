@@ -1,0 +1,25 @@
+name: Crypto Trading Bot
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # हर 5 मिनट में चलेगा
+  workflow_dispatch:      # तुम खुद भी चला सको, इसके लिए
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Bot
+        run: python bot.py
