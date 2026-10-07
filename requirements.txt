@@ -3,3 +3,6 @@ pandas
 numpy
 requests
 smartmoneyconcepts
+xgboost
+scikit-learn
+ta
