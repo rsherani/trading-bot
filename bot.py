@@ -16,8 +16,43 @@ print("=" * 60)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-COINS_TO_SCAN = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT',
-                 'ADA/USDT', 'DOGE/USDT', 'AVAX/USDT', 'DOT/USDT', 'LINK/USDT']
+# 🌍 Binance से टॉप 150 USDT पेयर लोड करने का फंक्शन
+def get_top_binance_pairs(limit=150):
+    try:
+        print("⏳ Binance से कॉइन लिस्ट लोड हो रही है...")
+        exchange = ccxt.binance({'enableRateLimit': True})
+        markets = exchange.load_markets()
+        
+        # सिर्फ USDT पेयर फ़िल्टर करो
+        usdt_pairs = [s for s in markets if s.endswith('/USDT')]
+        print(f"✅ Binance पर कुल {len(usdt_pairs)} USDT पेयर मिले।")
+        
+        # 24h वॉल्यूम के आधार पर सॉर्ट करो (टॉप कॉइन्स)
+        tickers = exchange.fetch_tickers()
+        sorted_pairs = sorted(usdt_pairs, 
+                              key=lambda s: tickers.get(s, {}).get('quoteVolume', 0) or 0, 
+                              reverse=True)
+        
+        top_pairs = sorted_pairs[:limit]
+        print(f"✅ टॉप {len(top_pairs)} कॉइन्स को स्कैन किया जाएगा।")
+        return top_pairs
+    except Exception as e:
+        print(f"❌ Binance पेयर लोड करने में एरर: {e}")
+        # अगर Binance काम न करे तो Bybit से लोड करो
+        try:
+            exchange = ccxt.bybit({'enableRateLimit': True})
+            markets = exchange.load_markets()
+            usdt_pairs = [s for s in markets if s.endswith('/USDT')]
+            tickers = exchange.fetch_tickers()
+            sorted_pairs = sorted(usdt_pairs, 
+                                  key=lambda s: tickers.get(s, {}).get('quoteVolume', 0) or 0, 
+                                  reverse=True)
+            return sorted_pairs[:limit]
+        except:
+            return ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'BNB/USDT', 'XRP/USDT'] # Fallback
+
+# ग्लोबल वेरिएबल - मेन लूप में अपडेट होगा
+COINS_TO_SCAN = []
 
 AGENT_WEIGHTS = {
     'market_structure': 20,
@@ -376,21 +411,29 @@ def analyze_coin(symbol):
 
 # ============ MAIN LOOP ============
 if __name__ == "__main__":
-    send_telegram_alert("🏛️ इंस्टीट्यूशनल AI सिस्टम v3.0 एक्टिवेट हो गया है! 7 एजेंट्स तैनात हैं।")
-
-    start = time.time()
-    while time.time() - start < 270:
-        found = False
-        for coin in COINS_TO_SCAN:
-            try:
-                result = analyze_coin(coin)
-                if result:
-                    now = time.time()
-                    key = f"{result['symbol']}_{result['action']}"
-                    if key not in last_alert_time or (now - last_alert_time[key] > ALERT_COOLDOWN):
-                        last_alert_time[key] = now
-                        found = True
-                        msg = f"""🏛️ <b>इंस्टीट्यूशनल सिग्नल</b> 🏛️
+    send_telegram_alert("🏛️ इंस्टीट्यूशनल AI सिस्टम v3.0 VPS पर लाइव हो गया है!")
+    
+    # 🚀 शुरुआत में Binance से टॉप 150 कॉइन्स लोड करो
+    COINS_TO_SCAN = get_top_binance_pairs(limit=150)
+    
+    if not COINS_TO_SCAN:
+        print("❌ कोई कॉइन नहीं मिला। बॉट बंद हो रहा है।")
+    else:
+        print(f"🚀 बॉट एक्टिव है। {len(COINS_TO_SCAN)} कॉइन्स को स्कैन किया जाएगा।")
+        
+        while True: # हमेशा चलता रहेगा
+            start_time = time.time()
+            print(f"\n[{time.strftime('%H:%M:%S')}] 🔍 नया स्कैन शुरू...")
+            
+            for coin in COINS_TO_SCAN:
+                try:
+                    result = analyze_coin(coin)
+                    if result:
+                        now = time.time()
+                        key = f"{result['symbol']}_{result['action']}"
+                        if key not in last_alert_time or (now - last_alert_time[key] > ALERT_COOLDOWN):
+                            last_alert_time[key] = now
+                            msg = f"""🏛️ <b>इंस्टीट्यूशनल सिग्नल</b> 🏛️
 
 <b>कॉइन:</b> {result['symbol']}
 <b>सिग्नल:</b> {result['action']}
@@ -404,12 +447,14 @@ if __name__ == "__main__":
 
 <b>एजेंट एनालिसिस:</b>
 {chr(10).join(result['reasons'])}"""
-                        send_telegram_alert(msg)
-                        print(f"✅ SENT: {result['symbol']} {result['action']}")
-            except Exception as e:
-                print(f"Error {coin}: {e}")
-            time.sleep(1)
-
-        if not found:
-            print("⏳ Scan complete. No institutional signal.")
-        time.sleep(60)
+                            send_telegram_alert(msg)
+                            print(f"✅ SENT: {result['symbol']} {result['action']}")
+                except Exception as e:
+                    print(f"Error {coin}: {e}")
+                time.sleep(0.3) # रेट लिमिट से बचने के लिए छोटा ब्रेक
+            
+            # अब 5 मिनट (300 सेकंड) का इंतज़ार करो
+            elapsed = time.time() - start_time
+            wait_time = max(0, 300 - elapsed)
+            print(f"⏳ स्कैन पूरा। अगला स्कैन {wait_time/60:.1f} मिनट बाद...")
+            time.sleep(wait_time)
